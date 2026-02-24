@@ -1,0 +1,64 @@
+{
+  "summary": {
+    "submissions": 432,
+    "zipCoverage": 14,
+    "lastUpdated": "2026-03-01T12:00:00Z"
+  },
+
+  "needsTimeseries": {
+    "x": ["Jan", "apiFeb", "Mar", "Apr", "May", "Jun"],
+    "series": [
+      {
+        "label": "Food is too expensive",
+        "values": [12, 18, 22, 25, 30, 36]
+      },
+      {
+        "label": "Hard to reach grocery store",
+        "values": [5, 8, 9, 13, 16, 18]
+      },
+      {
+        "label": "Can't find healthy food",
+        "values": [3, 6, 10, 14, 17, 20]
+      }
+    ]
+  },
+
+  "topNeeds": {
+    "items": [
+      { "label": "Food is too expensive", "count": 120 },
+      { "label": "Transportation issues", "count": 84 },
+      { "label": "Healthy food access", "count": 73 },
+      { "label": "Time to cook", "count": 61 }
+    ]
+  },
+
+  "zipDistribution": {
+    "items": [
+      { "zip": "95112", "count": 54 },
+      { "zip": "95116", "count": 48 },
+      { "zip": "95050", "count": 41 },
+      { "zip": "95122", "count": 37 }
+    ]
+  },
+
+  "textTopics": {
+    "x": ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+    "items": [
+      {
+        "topic": "rent",
+        "total": 52,
+        "values": [5, 7, 8, 10, 11, 11]
+      },
+      {
+        "topic": "transportation",
+        "total": 44,
+        "values": [3, 6, 7, 9, 9, 10]
+      },
+      {
+        "topic": "childcare",
+        "total": 33,
+        "values": [2, 4, 6, 7, 7, 7]
+      }
+    ]
+  }
+}
