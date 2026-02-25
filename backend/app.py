@@ -123,6 +123,7 @@ def fetch_survey_data():
 
 # Use a sample CSV for prototype
 def fetch_data(responses):
+    '''Formats data as a dictionary'''
     metrics = {}
 
     # Worry level
