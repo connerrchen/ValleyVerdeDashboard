@@ -5,9 +5,10 @@ import { CommunityNeedsView } from './components/CommunityNeedsView';
 import { DemographicsView } from './components/DemographicsView';
 import { LandingPage } from './components/LandingPage';
 import { StatsView } from './components/StatsView';
+import { TimelineView } from './components/TimelineView';
 import { 
   LayoutDashboard, Users, Download, FileText, 
-  Info, Home
+  Info, Home, Clock
 } from 'lucide-react';
 
 // Custom Corn Logo SVG Component
@@ -42,7 +43,7 @@ const CornLogo = () => (
 );
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'home' | 'needs' | 'demographics'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'needs' | 'demographics' | 'timeline'>('home');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [filteredData, setFilteredData] = useState<SurveyResponse[]>(MOCK_DATA);
   const [showMethodology, setShowMethodology] = useState(false);
@@ -110,6 +111,13 @@ const App: React.FC = () => {
                 <Users size={20} />
                 Demographics & Geo
             </button>
+            <button 
+                onClick={() => setActiveTab('timeline')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'timeline' ? 'bg-[#2d6a4f] text-white border-l-4 border-[#84cc16]' : 'text-green-100 hover:bg-[#2d6a4f]/50'}`}
+            >
+                <Clock size={20} />
+                Timeline
+            </button>
         </nav>
 
         <div className="p-4 border-t border-[#2d6a4f]">
@@ -136,7 +144,7 @@ const App: React.FC = () => {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
               <div>
                   <h2 className="text-2xl font-bold text-[#1b4332]">
-                      {activeTab === 'needs' ? 'Community Food Needs' : 'Demographics & Geography'}
+                      {activeTab === 'needs' ? 'Community Food Needs' : activeTab === 'demographics' ? 'Demographics & Geography' : 'Community Response Timeline'}
                   </h2>
                   <p className="text-stone-500 text-sm">Real-time survey analytics</p>
               </div>
@@ -166,8 +174,10 @@ const App: React.FC = () => {
             <LandingPage onNavigate={setActiveTab} />
         ) : activeTab === 'needs' ? (
             <CommunityNeedsView data={filteredData} />
-        ) : (
+        ) : activeTab === 'demographics' ? (
             <DemographicsView data={filteredData} />
+        ) : (
+            <TimelineView data={filteredData} />
         )}
 
         {/* Footer / Context - Visible on all pages but adjusted content on landing page */}
