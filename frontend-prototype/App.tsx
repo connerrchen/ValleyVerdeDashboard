@@ -144,7 +144,7 @@ const App: React.FC = () => {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
               <div>
                   <h2 className="text-2xl font-bold text-[#1b4332]">
-                      {activeTab === 'needs' ? 'Community Food Needs' : 'Demographics & Geography'}
+                      {activeTab === 'needs' ? 'Community Food Needs' : activeTab === 'demographics' ? 'Demographics & Geography' : 'Community Response Timeline'}
                   </h2>
                   <p className="text-stone-500 text-sm">Real-time survey analytics</p>
               </div>

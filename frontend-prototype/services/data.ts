@@ -1,5 +1,8 @@
 import { SurveyResponse } from '../types';
 
+// Backend API URL - use environment variable or default to localhost
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 // PDF Specific Options
 const ZIP_CODES = ['95112', '95116', '95122', '95110', '95133', '95020', '95111', '95127', '95148', '95123'];
 
@@ -46,6 +49,20 @@ const FUTURE_OUTLOOKS = [
   'Less concerned about getting food or getting the right type of food',
   'Unsure'
 ];
+
+// Fetch summary data from backend
+export async function fetchSummaryData() {
+  try {
+    const response = await fetch(`${API_URL}/api/summary`);
+    if (!response.ok) {
+      throw new Error(`API error: ${response.statusText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch summary data:', error);
+    throw error;
+  }
+}
 
 // Helper to get random item
 const randomItem = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
