@@ -20,7 +20,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 # Get spreadsheet ID from environment variable
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "YOUR_SPREADSHEET_ID_HERE")
-RANGE_NAME = "B2:M"  # Reads from row 2 to end, columns A-M
+RANGE_NAME = "B2:N"  # Reads from row 2 to end, columns B-N
 
 
 def get_sheets_service():
@@ -76,14 +76,20 @@ def fetch_survey_data():
                 row.append("")
             
             # Parse the survey response
-            # Column indices (0-based):
-            # A (0): Name (optional)
-            # B (1): Worry level (1-10)
-            # C (2): Trouble affording
-            # D (3): Trouble finding
-            # E (4): Knowledge needed
-            # F (5): Future concern
-            # G-M (6-12): Demographics (age, gender, race/ethnicity, ZIP, household size, income, comments)
+            # Column indices (0-based) mapping to columns B-N:
+            # B (0): Name (optional)
+            # C (1): 1. In the past week, how worried have you been about getting enough food?
+            # D (2): 3. I have trouble affording (multiselect)
+            # E (3): 4. At grocery stores, I have trouble finding (multiselect)
+            # F (4): 5. I would like more knowledge about (multiselect)
+            # G (5): 2. When thinking about the next three months, I feel
+            # H (6): 7. What is your age?
+            # I (7): 8. What is your gender?
+            # J (8): 9. What is your race/ethnicity? (multiselect)
+            # K (9): 10. What is your ZIP code?
+            # L (10): 11. How many people live in your home?
+            # M (11): 12. What was your household's total income last year?
+            # N (12): 6. Is there anything else you want to share?
             
             try:
                 worry_level = int(row[1]) if len(row) > 1 and row[1] and row[1].strip().isdigit() else None
@@ -96,7 +102,14 @@ def fetch_survey_data():
                 "trouble_affording": parse_multiselect(row[2]) if len(row) > 2 else [],
                 "trouble_finding": parse_multiselect(row[3]) if len(row) > 3 else [],
                 "knowledge_needed": parse_multiselect(row[4]) if len(row) > 4 else [],
-                "future_concern": row[5].strip() if len(row) > 5 and row[5] else None
+                "future_concern": row[5].strip() if len(row) > 5 and row[5] else None,
+                "age": row[6].strip() if len(row) > 6 and row[6] else None,
+                "gender": row[7].strip() if len(row) > 7 and row[7] else None,
+                "race_ethnicity": parse_multiselect(row[8]) if len(row) > 8 else [],
+                "zip_code": row[9].strip() if len(row) > 9 and row[9] else None,
+                "household_size": row[10].strip() if len(row) > 10 and row[10] else None,
+                "household_income": row[11].strip() if len(row) > 11 and row[11] else None,
+                "additional_comments": row[12].strip() if len(row) > 12 and row[12] else None
             }
             
             survey_responses.append(response)
@@ -140,6 +153,34 @@ def fetch_data(responses):
     # Future concern
     future_all = [r.get("future_concern") for r in responses if r.get("future_concern")]
     metrics["future_concern_counts"] = dict(Counter(future_all))
+
+    # Demographics - Age
+    ages = [r.get("age") for r in responses if r.get("age")]
+    metrics["age_counts"] = dict(Counter(ages))
+
+    # Demographics - Gender
+    genders = [r.get("gender") for r in responses if r.get("gender")]
+    metrics["gender_counts"] = dict(Counter(genders))
+
+    # Demographics - Race/Ethnicity
+    race_ethnicity_all = [item for r in responses for item in r.get("race_ethnicity", [])]
+    metrics["race_ethnicity_counts"] = dict(Counter(race_ethnicity_all))
+
+    # Demographics - ZIP Code
+    zip_codes = [r.get("zip_code") for r in responses if r.get("zip_code")]
+    metrics["zip_code_counts"] = dict(Counter(zip_codes))
+
+    # Demographics - Household Size
+    household_sizes = [r.get("household_size") for r in responses if r.get("household_size")]
+    metrics["household_size_counts"] = dict(Counter(household_sizes))
+
+    # Demographics - Household Income
+    household_incomes = [r.get("household_income") for r in responses if r.get("household_income")]
+    metrics["household_income_counts"] = dict(Counter(household_incomes))
+
+    # Additional Comments
+    comments = [r.get("additional_comments") for r in responses if r.get("additional_comments")]
+    metrics["additional_comments"] = comments
 
     return metrics
 
