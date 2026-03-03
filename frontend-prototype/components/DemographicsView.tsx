@@ -13,6 +13,8 @@ import {
   Legend,
   BarChart,
   Bar,
+  LineChart,
+  Line,
 } from "recharts";
 import { MapContainer, TileLayer, Circle, Tooltip as LeafletTooltip, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -20,6 +22,7 @@ import { SurveyResponse } from "../types";
 
 interface Props {
   data: SurveyResponse[];
+  allData?: SurveyResponse[];
 }
 
 const ZIP_COORDINATES: Record<string, { lat: number; lng: number }> = {
@@ -83,7 +86,9 @@ const FitBoundsController: React.FC<{
   return null;
 };
 
-export const DemographicsView: React.FC<Props> = ({ data }) => {
+export const DemographicsView: React.FC<Props> = ({ data, allData }) => {
+  const historicalData = allData ?? data;
+
   // 1. Geo Heatmap Points (Full Service Area)
   const geoHeatPoints = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -204,6 +209,84 @@ export const DemographicsView: React.FC<Props> = ({ data }) => {
 
     return order.map((k) => ({ name: k, value: counts[k] || 0 }));
   }, [data]);
+
+  const countyAreaRanking = useMemo(() => {
+    const counts: Record<string, number> = {};
+    historicalData.forEach((response) => {
+      counts[response.zipCode] = (counts[response.zipCode] || 0) + 1;
+    });
+
+    return Object.entries(counts)
+      .map(([zip, count]) => ({ zip, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [historicalData]);
+
+  const topTrendZips = useMemo(() => countyAreaRanking.slice(0, 3).map((entry) => entry.zip), [countyAreaRanking]);
+
+  const areaTrendData = useMemo(() => {
+    const grouped: Record<string, SurveyResponse[]> = {};
+
+    historicalData.forEach((response) => {
+      const date = new Date(response.timestamp);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      grouped[key] = grouped[key] || [];
+      grouped[key].push(response);
+    });
+
+    return Object.entries(grouped)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, responses]) => {
+        const [year, month] = key.split("-").map(Number);
+        const labelDate = new Date(year, month - 1, 1);
+        const row: Record<string, string | number> = {
+          month: labelDate.toLocaleString("default", { month: "short" }),
+          monthFull: labelDate.toLocaleString("default", { month: "long", year: "numeric" }),
+        };
+
+        topTrendZips.forEach((zip) => {
+          row[zip] = responses.filter((response) => response.zipCode === zip).length;
+        });
+
+        return row;
+      });
+  }, [historicalData, topTrendZips]);
+
+  const periodComparison = useMemo(() => {
+    const currentCount = data.length;
+    const allTimeCount = historicalData.length;
+
+    if (currentCount === 0 || allTimeCount === 0) {
+      return {
+        currentCount,
+        allTimeCount,
+        previousCount: 0,
+        changePct: 0,
+      };
+    }
+
+    const timestamps = data.map((response) => new Date(response.timestamp).getTime()).sort((a, b) => a - b);
+    const currentStart = timestamps[0];
+    const currentEnd = timestamps[timestamps.length - 1];
+    const windowMs = Math.max(currentEnd - currentStart, 7 * 24 * 60 * 60 * 1000);
+
+    const previousStart = currentStart - windowMs;
+    const previousEnd = currentStart;
+
+    const previousCount = historicalData.filter((response) => {
+      const ts = new Date(response.timestamp).getTime();
+      return ts >= previousStart && ts < previousEnd;
+    }).length;
+
+    const changePct = previousCount > 0 ? Math.round(((currentCount - previousCount) / previousCount) * 100) : 0;
+
+    return {
+      currentCount,
+      allTimeCount,
+      previousCount,
+      changePct,
+    };
+  }, [data, historicalData]);
 
   return (
     <div className="space-y-6">
@@ -438,6 +521,76 @@ export const DemographicsView: React.FC<Props> = ({ data }) => {
             {topHotspots.map((z) => (
               <div key={z.zip} className="bg-stone-50 border border-stone-200 rounded-md px-3 py-2 text-stone-700">
                 <span className="font-semibold text-[#1b4332]">{z.zip}</span>: {z.count} responses
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-stone-200">
+          <h3 className="text-lg font-bold text-[#1b4332] mb-2">Area Change Over Time</h3>
+          <p className="text-sm text-stone-500 mb-4">
+            Historical trend by top ZIP-code areas (hover points for exact monthly counts).
+          </p>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={areaTrendData} margin={{ top: 12, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                <XAxis dataKey="month" tick={{ fill: "#57534e", fontSize: 12 }} />
+                <YAxis allowDecimals={false} tick={{ fill: "#57534e", fontSize: 12 }} />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: "8px",
+                    border: "none",
+                    boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                  }}
+                  labelFormatter={(label, payload) => payload?.[0]?.payload?.monthFull || label}
+                />
+                {topTrendZips.map((zip, index) => (
+                  <Line
+                    key={zip}
+                    type="monotone"
+                    dataKey={zip}
+                    name={`ZIP ${zip}`}
+                    stroke={HEAT_LEVEL_COLORS[Math.min(index + 1, 4)]}
+                    strokeWidth={2.5}
+                    dot={{ r: 3 }}
+                    activeDot={{ r: 5 }}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-stone-200">
+          <h3 className="text-lg font-bold text-[#1b4332] mb-4">Historic vs Current</h3>
+          <div className="space-y-3 mb-4">
+            <div className="bg-stone-50 border border-stone-200 rounded-lg p-3">
+              <p className="text-xs text-stone-500 uppercase tracking-wide">Current View Responses</p>
+              <p className="text-2xl font-bold text-[#1b4332]">{periodComparison.currentCount}</p>
+            </div>
+            <div className="bg-stone-50 border border-stone-200 rounded-lg p-3">
+              <p className="text-xs text-stone-500 uppercase tracking-wide">All-Time Responses</p>
+              <p className="text-2xl font-bold text-[#1b4332]">{periodComparison.allTimeCount}</p>
+            </div>
+            <div className="bg-stone-50 border border-stone-200 rounded-lg p-3">
+              <p className="text-xs text-stone-500 uppercase tracking-wide">Change vs Previous Window</p>
+              <p className={`text-2xl font-bold ${periodComparison.changePct >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                {periodComparison.changePct >= 0 ? "+" : ""}
+                {periodComparison.changePct}%
+              </p>
+              <p className="text-xs text-stone-500 mt-1">Previous window: {periodComparison.previousCount} responses</p>
+            </div>
+          </div>
+
+          <h4 className="text-sm font-semibold text-stone-600 uppercase tracking-wide mb-2">County Area Ranking</h4>
+          <div className="space-y-2 text-sm">
+            {countyAreaRanking.map((entry, index) => (
+              <div key={entry.zip} className="flex items-center justify-between bg-stone-50 border border-stone-200 rounded-md px-3 py-2">
+                <span className="text-stone-700">#{index + 1} ZIP {entry.zip}</span>
+                <span className="font-semibold text-[#1b4332]">{entry.count}</span>
               </div>
             ))}
           </div>

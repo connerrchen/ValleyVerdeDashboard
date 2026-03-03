@@ -67,7 +67,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
     "home" | "needs" | "demographics" | "timeline"
   >("home");
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("week");
   const [filteredData, setFilteredData] = useState<SurveyResponse[]>(MOCK_DATA);
   const [showMethodology, setShowMethodology] = useState(false);
 
@@ -81,6 +81,9 @@ const App: React.FC = () => {
     } else if (timeFilter === "month") {
       const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       res = res.filter((d) => new Date(d.timestamp) > monthAgo);
+    } else if (timeFilter === "quarter") {
+      const quarterAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      res = res.filter((d) => new Date(d.timestamp) > quarterAgo);
     }
     setFilteredData(res);
   }, [timeFilter]);
@@ -187,7 +190,7 @@ const App: React.FC = () => {
                 {activeTab === "needs"
                   ? "Community Food Needs"
                   : activeTab === "demographics"
-                    ? "Demographicsgraphy"
+                    ? "Demographics & Geography"
                     : "Community Response Timeline"}
               </h2>
               <p className="text-stone-500 text-sm">
@@ -214,6 +217,12 @@ const App: React.FC = () => {
                   className={`px-3 py-1 rounded text-sm ${timeFilter === "all" ? "bg-green-100 text-green-800 font-bold" : "text-stone-600 hover:bg-stone-100"}`}
                 >
                   All Time
+                </button>
+                <button
+                  onClick={() => setTimeFilter("quarter")}
+                  className={`px-3 py-1 rounded text-sm ${timeFilter === "quarter" ? "bg-green-100 text-green-800 font-bold" : "text-stone-600 hover:bg-stone-100"}`}
+                >
+                  Quarter
                 </button>
               </div>
 
@@ -242,7 +251,7 @@ const App: React.FC = () => {
         ) : activeTab === "needs" ? (
           <CommunityNeedsView data={filteredData} />
         ) : activeTab === "demographics" ? (
-          <DemographicsView data={filteredData} />
+          <DemographicsView data={filteredData} allData={MOCK_DATA} />
         ) : (
           <TimelineView data={filteredData} />
         )}
