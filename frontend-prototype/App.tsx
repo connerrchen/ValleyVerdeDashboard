@@ -213,16 +213,16 @@ const App: React.FC = () => {
                   Month
                 </button>
                 <button
-                  onClick={() => setTimeFilter("all")}
-                  className={`px-3 py-1 rounded text-sm ${timeFilter === "all" ? "bg-green-100 text-green-800 font-bold" : "text-stone-600 hover:bg-stone-100"}`}
-                >
-                  All Time
-                </button>
-                <button
                   onClick={() => setTimeFilter("quarter")}
                   className={`px-3 py-1 rounded text-sm ${timeFilter === "quarter" ? "bg-green-100 text-green-800 font-bold" : "text-stone-600 hover:bg-stone-100"}`}
                 >
                   Quarter
+                </button>
+                <button
+                  onClick={() => setTimeFilter("all")}
+                  className={`px-3 py-1 rounded text-sm ${timeFilter === "all" ? "bg-green-100 text-green-800 font-bold" : "text-stone-600 hover:bg-stone-100"}`}
+                >
+                  All Time
                 </button>
               </div>
 
