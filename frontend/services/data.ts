@@ -141,7 +141,7 @@ export const generateMockData = (count: number): SurveyResponse[] => {
   });
 };
 
-export const MOCK_DATA = generateMockData(120);
+// export const MOCK_DATA = generateMockData(120);
 
 // Fetch real survey responses from backend, with optional time range
 export async function fetchSurveyResponses(range: 'week' | 'month' | 'quarter' | 'all' = 'all'): Promise<SurveyResponse[]> {
