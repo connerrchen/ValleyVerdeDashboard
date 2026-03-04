@@ -1,124 +1,162 @@
+
+
+
+# --- FastAPI app and CORS middleware setup ---
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+# --- MOCK DATA FOR /api/responses ---
+import random
+import string
+from datetime import datetime, timedelta, timezone
+
+def random_id():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+def generate_mock_responses(n=100):
+    zip_codes = ["95112", "95116", "95122", "95110", "95133", "95020", "95111", "95127", "95148", "95123"]
+    food_categories = [
+        "Fresh fruits/vegetables",
+        "Meat/eggs/milk",
+        "Foods from my culture",
+        "Organic food",
+        "Food for my health problem (like diabetes)",
+        "Baby food/formula"
+    ]
+    knowledge_topics = [
+        "Preparing healthy meals",
+        "Preparing culturally-relevant meals",
+        "Health benefits of nutritious food",
+        "Health benefits of organic food",
+        "Growing my own food"
+    ]
+    income_ranges = [
+        "Under $50,000",
+        "$50,000 - $99,000",
+        "$100,000 - $150,000",
+        "$150,000 - $200,000",
+        "$200,000 or more",
+        "Prefer not to say"
+    ]
+    age_ranges = ["Under 20", "20-39", "40-59", "Over 60", "Prefer not to say"]
+    ethnicities = [
+        "Hispanic or Latine",
+        "Asian / Pacific Islander",
+        "Black or African American",
+        "White",
+        "Native American or American Indian",
+        "Prefer not to say"
+    ]
+    future_outlooks = [
+        "More concerned about getting food or getting the right type of food",
+        "Equally concerned about getting food or getting the right type of food",
+        "Less concerned about getting food or getting the right type of food",
+        "Unsure"
+    ]
+    genders = ["Female", "Male", "Non-binary / Gender expansive", "Prefer not to say"]
+    notes = [
+        "I need gluten-free boxes.",
+        "I would love to learn to garden.",
+        "The store is too far.",
+        "Prices are too high for eggs.",
+        ""
+    ]
+    responses = []
+    now = datetime.now(timezone.utc)
+    for i in range(n):
+        income = random.choice(income_ranges)
+        age = random.choice(age_ranges)
+        household_size = random.randint(1, 6)
+        # Lower income = higher worry
+        if income == 'Under $50,000':
+            base_worry = random.randint(3, 5)
+        elif income == '$50,000 - $99,000':
+            base_worry = random.randint(2, 4)
+        else:
+            base_worry = random.randint(1, 3)
+        worry_level = min(5, max(1, base_worry))
+        num_afford = random.randint(0, 2) if worry_level < 4 else random.randint(2, 5)
+        affordability = random.sample(food_categories, num_afford)
+        num_avail = random.randint(0, 3)
+        availability = random.sample(food_categories, num_avail)
+        knowledge = random.sample(knowledge_topics, random.randint(1, 4))
+        if worry_level >= 4:
+            outlook = future_outlooks[0]
+        elif worry_level == 3:
+            outlook = future_outlooks[1]
+        else:
+            outlook = future_outlooks[2]
+        timestamp = (now - timedelta(days=random.randint(0, 60))).isoformat()
+        responses.append({
+            "id": random_id(),
+            "timestamp": timestamp,
+            "zipCode": random.choice(zip_codes),
+            "email": f"user{i}@example.com" if random.random() > 0.5 else None,
+            "verified": random.random() > 0.5,
+            "worryLevel": worry_level,
+            "futureOutlook": outlook,
+            "affordabilityBarriers": affordability,
+            "availabilityBarriers": availability,
+            "knowledgeInterests": knowledge,
+            "otherNotes": random.choice(notes),
+            "ageRange": age,
+            "gender": random.choice(genders),
+            "ethnicity": [random.choice(ethnicities)],
+            "householdSize": household_size,
+            "incomeRange": income,
+            "crisisAlert": worry_level >= 4
+        })
+    return responses
+
+
+
+# --- API ENDPOINTS ---
+@app.get("/api/responses")
+def get_mock_responses():
+    return generate_mock_responses(120)
+
+# --- FILTERED RESPONSES ENDPOINT ---
+from fastapi import Query
+from typing import Literal
+
+@app.get("/api/responses/filter")
+def get_filtered_responses(range: Literal['week', 'month', 'quarter', 'all'] = Query('week')):
+    """
+    Returns mock survey responses filtered by time range.
+    """
+    responses = generate_mock_responses(120)
+    now = datetime.now(timezone.utc)
+    if range == 'week':
+        cutoff = now - timedelta(days=7)
+    elif range == 'month':
+        cutoff = now - timedelta(days=30)
+    elif range == 'quarter':
+        cutoff = now - timedelta(days=90)
+    else:
+        cutoff = None
+    if cutoff:
+        filtered = [r for r in responses if datetime.fromisoformat(r['timestamp']) >= cutoff]
+        return filtered
+    return responses
+
 from collections import Counter
 import os
 import os.path
-
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-
-# Load environment variables
-load_dotenv()
-
-app = FastAPI()
-
-# If modifying these scopes, delete the file token.json.
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-
-# Get spreadsheet ID from environment variable
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "YOUR_SPREADSHEET_ID_HERE")
-RANGE_NAME = "B2:N"  # Reads from row 2 to end, columns B-N
-
-
-def get_sheets_service():
-    """Authenticates and returns the Google Sheets API service."""
-    creds = None
-    # The file token.json stores the user's access and refresh tokens
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-    # If there are no (valid) credentials available, let the user log in
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                "credentials.json", SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
-    
-    service = build("sheets", "v4", credentials=creds)
-    return service
-
-
-def parse_multiselect(cell_value):
-    """Parse comma-separated values from Google Forms multiple choice questions."""
-    if not cell_value or cell_value.strip() == "":
-        return []
-    # Split by comma and strip whitespace
-    return [item.strip() for item in cell_value.split(",") if item.strip()]
-
-
-def fetch_survey_data():
-    """Fetches survey data from Google Sheets and returns it in the expected format."""
-    try:
-        service = get_sheets_service()
-        sheet = service.spreadsheets()
-        result = (
-            sheet.values()
-            .get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME)
-            .execute()
-        )
-        values = result.get("values", [])
-        
-        if not values:
-            return []
-        
-        survey_responses = []
-        for row in values:
-            # Ensure row has enough columns (pad with empty strings if needed)
-            while len(row) < 13:
-                row.append("")
-            
-            # Parse the survey response
-            # Column indices (0-based) mapping to columns B-N:
-            # B (0): Name (optional)
-            # C (1): 1. In the past week, how worried have you been about getting enough food?
-            # D (2): 3. I have trouble affording (multiselect)
-            # E (3): 4. At grocery stores, I have trouble finding (multiselect)
-            # F (4): 5. I would like more knowledge about (multiselect)
-            # G (5): 2. When thinking about the next three months, I feel
-            # H (6): 7. What is your age?
-            # I (7): 8. What is your gender?
-            # J (8): 9. What is your race/ethnicity? (multiselect)
-            # K (9): 10. What is your ZIP code?
-            # L (10): 11. How many people live in your home?
-            # M (11): 12. What was your household's total income last year?
-            # N (12): 6. Is there anything else you want to share?
-            
-            try:
-                worry_level = int(row[1]) if len(row) > 1 and row[1] and row[1].strip().isdigit() else None
-            except (ValueError, IndexError):
-                worry_level = None
-            
-            response = {
-                "name": row[0].strip() if len(row) > 0 and row[0] else None,
-                "worry_level": worry_level,
-                "trouble_affording": parse_multiselect(row[2]) if len(row) > 2 else [],
-                "trouble_finding": parse_multiselect(row[3]) if len(row) > 3 else [],
-                "knowledge_needed": parse_multiselect(row[4]) if len(row) > 4 else [],
-                "future_concern": row[5].strip() if len(row) > 5 and row[5] else None,
-                "age": row[6].strip() if len(row) > 6 and row[6] else None,
-                "gender": row[7].strip() if len(row) > 7 and row[7] else None,
-                "race_ethnicity": parse_multiselect(row[8]) if len(row) > 8 else [],
-                "zip_code": row[9].strip() if len(row) > 9 and row[9] else None,
-                "household_size": row[10].strip() if len(row) > 10 and row[10] else None,
-                "household_income": row[11].strip() if len(row) > 11 and row[11] else None,
-                "additional_comments": row[12].strip() if len(row) > 12 and row[12] else None
-            }
-            
-            survey_responses.append(response)
-        
-        return survey_responses
-    
-    except HttpError as err:
-        print(f"An error occurred: {err}")
-        return []
 
 
 # Use a sample CSV for prototype
@@ -183,10 +221,42 @@ def fetch_data(responses):
     comments = [r.get("additional_comments") for r in responses if r.get("additional_comments")]
     metrics["additional_comments"] = comments
 
+    from datetime import datetime, timezone
+    metrics["timestamp"] = datetime.now(timezone.utc).isoformat()
     return metrics
 
 @app.get("/api/summary")
 def get_summary():
+    # MOCK MODE: Return hardcoded mock data for frontend development
+    MOCK = True
+    if MOCK:
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        # Example: 5 timestamps, each with a corresponding avg_worry score
+        timestamp_scores = {
+            (now - timedelta(days=i)).isoformat(): 2.0 + i*0.5 for i in range(5)
+        }
+        return {
+            "avg_worry": 2.5,
+            "worry_distribution": {"1": 2, "2": 3, "3": 1, "4": 2, "5": 2},
+            "percent_extremely_worried": 20.0,
+            "percent_not_worried": 30.0,
+            "trouble_affording_counts": {"Meat": 2, "Dairy": 1},
+            "percent_with_trouble_affording": 40.0,
+            "trouble_finding_counts": {"Eggs": 1, "Bread": 2},
+            "percent_with_trouble_finding": 20.0,
+            "knowledge_counts": {"Gardening": 2, "Cooking": 1},
+            "future_concern_counts": {"More concerned": 3, "Less concerned": 2},
+            "age_counts": {"20-39": 2, "40-59": 3},
+            "gender_counts": {"Male": 3, "Female": 4},
+            "race_ethnicity_counts": {"Latino": 2, "White": 2},
+            "zip_code_counts": {"95112": 2, "95116": 1},
+            "household_size_counts": {"2": 2, "4": 1},
+            "household_income_counts": {"$0-25k": 2, "$25k-50k": 1},
+            "additional_comments": ["Thank you!", "Need more info."],
+            "timestamp": timestamp_scores
+        }
     # Fetch live data from Google Sheets
     survey_responses = fetch_survey_data()
-    return fetch_data(survey_responses)
+    summary = fetch_data(survey_responses)
+    return summary

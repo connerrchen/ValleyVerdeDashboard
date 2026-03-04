@@ -6,8 +6,11 @@ import {
 import { SurveyResponse } from '../types';
 import { Info, BookOpen, AlertTriangle, TrendingUp } from 'lucide-react';
 
+import { TimeFilter } from '../types';
+
 interface Props {
   data: SurveyResponse[];
+  timeFilter?: TimeFilter;
 }
 
 // Colors for the Gap Analysis
@@ -32,29 +35,59 @@ const OUTLOOK_COLORS: Record<string, string> = {
     'Unsure': '#9ca3af'
 };
 
-export const CommunityNeedsView: React.FC<Props> = ({ data }) => {
+
+export const CommunityNeedsView: React.FC<Props> = ({ data, timeFilter = 'week' }) => {
 
   // 0. Need Trends Over Time (line chart)
-  const monthlyNeedTrend = useMemo(() => {
-    const grouped: Record<string, SurveyResponse[]> = {};
-
-    data.forEach((response) => {
-      const date = new Date(response.timestamp);
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      grouped[key] = grouped[key] || [];
-      grouped[key].push(response);
-    });
-
-    return Object.entries(grouped)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, responses]) => {
+  const needTrend = useMemo(() => {
+    if (timeFilter === 'week') {
+      // Always show 7 consecutive days (ending with the most recent day in data or today)
+      if (!data.length) return [];
+      // Find the latest date in the data (or use today)
+      const latest = data.reduce((max, r) => {
+        const t = new Date(r.timestamp).getTime();
+        return t > max ? t : max;
+      }, Date.now());
+      // Build 7 days array ending with latest
+      const days: string[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(latest);
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - i);
+        days.push(d.toISOString().slice(0, 10));
+      }
+      return days.map((isoDate) => {
+        const dateObj = new Date(isoDate);
+        const dayLabel = dateObj.toLocaleString('default', { weekday: 'short' });
+        const row: Record<string, string | number> = { day: dayLabel };
+        NEED_DEFINITIONS.forEach((need) => {
+          const count = data.filter((response) => {
+            const respDate = new Date(response.timestamp);
+            return respDate.toISOString().slice(0, 10) === isoDate &&
+              (response.affordabilityBarriers.includes(need.source) || response.availabilityBarriers.includes(need.source));
+          }).length;
+          row[need.id] = count;
+        });
+        return row;
+      });
+    } else if (timeFilter === 'month') {
+      // Group by month, show last 6 months
+      const grouped: Record<string, SurveyResponse[]> = {};
+      data.forEach((response) => {
+        const date = new Date(response.timestamp);
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        grouped[key] = grouped[key] || [];
+        grouped[key].push(response);
+      });
+      const sortedEntries = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
+      const last6 = sortedEntries.slice(-6);
+      return last6.map(([key, responses]) => {
         const [year, month] = key.split('-').map(Number);
         const labelDate = new Date(year, month - 1, 1);
         const row: Record<string, string | number> = {
           month: labelDate.toLocaleString('default', { month: 'short' }),
           monthFull: labelDate.toLocaleString('default', { month: 'long', year: 'numeric' })
         };
-
         NEED_DEFINITIONS.forEach((need) => {
           const count = responses.filter(
             (response) =>
@@ -63,10 +96,69 @@ export const CommunityNeedsView: React.FC<Props> = ({ data }) => {
           ).length;
           row[need.id] = count;
         });
-
         return row;
       });
-  }, [data]);
+    } else if (timeFilter === 'quarter') {
+      // Group by quarter, show last 6 quarters
+      const grouped: Record<string, SurveyResponse[]> = {};
+      data.forEach((response) => {
+        const date = new Date(response.timestamp);
+        const year = date.getFullYear();
+        const quarter = Math.floor(date.getMonth() / 3) + 1;
+        const key = `${year}-Q${quarter}`;
+        grouped[key] = grouped[key] || [];
+        grouped[key].push(response);
+      });
+      const sortedEntries = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
+      const last6 = sortedEntries.slice(-6);
+      return last6.map(([key, responses]) => {
+        const [yearStr, qStr] = key.split('-Q');
+        const year = Number(yearStr);
+        const quarter = Number(qStr);
+        const row: Record<string, string | number> = {
+          quarter: `Q${quarter} ${year}`,
+          quarterFull: `Quarter ${quarter}, ${year}`
+        };
+        NEED_DEFINITIONS.forEach((need) => {
+          const count = responses.filter(
+            (response) =>
+              response.affordabilityBarriers.includes(need.source) ||
+              response.availabilityBarriers.includes(need.source)
+          ).length;
+          row[need.id] = count;
+        });
+        return row;
+      });
+    } else {
+      // Default: group by month, show last 6
+      const grouped: Record<string, SurveyResponse[]> = {};
+      data.forEach((response) => {
+        const date = new Date(response.timestamp);
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        grouped[key] = grouped[key] || [];
+        grouped[key].push(response);
+      });
+      const sortedEntries = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
+      const last6 = sortedEntries.slice(-6);
+      return last6.map(([key, responses]) => {
+        const [year, month] = key.split('-').map(Number);
+        const labelDate = new Date(year, month - 1, 1);
+        const row: Record<string, string | number> = {
+          month: labelDate.toLocaleString('default', { month: 'short' }),
+          monthFull: labelDate.toLocaleString('default', { month: 'long', year: 'numeric' })
+        };
+        NEED_DEFINITIONS.forEach((need) => {
+          const count = responses.filter(
+            (response) =>
+              response.affordabilityBarriers.includes(need.source) ||
+              response.availabilityBarriers.includes(need.source)
+          ).length;
+          row[need.id] = count;
+        });
+        return row;
+      });
+    }
+  }, [data, timeFilter]);
 
   const needRanking = useMemo(() => {
     return NEED_DEFINITIONS.map((need) => {
@@ -156,13 +248,20 @@ export const CommunityNeedsView: React.FC<Props> = ({ data }) => {
             Community Needs Over Time
           </h3>
           <p className="text-sm text-stone-500 mb-4">
-            X-axis shows months; Y-axis shows number of respondents reporting each need.
+            X-axis shows {timeFilter === 'week' ? 'days of the week' : 'months'}; Y-axis shows number of respondents reporting each need.
           </p>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={monthlyNeedTrend} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+              <LineChart data={needTrend} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis dataKey="month" tick={{ fill: '#57534e', fontSize: 12 }} />
+                <XAxis 
+                  dataKey={
+                    timeFilter === 'week' ? 'day' :
+                    timeFilter === 'quarter' ? 'quarter' :
+                    'month'
+                  }
+                  tick={{ fill: '#57534e', fontSize: 12 }}
+                />
                 <YAxis tick={{ fill: '#57534e', fontSize: 12 }} allowDecimals={false} />
                 <RechartsTooltip
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}

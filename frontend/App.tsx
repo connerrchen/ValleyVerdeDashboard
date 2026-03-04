@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { MOCK_DATA } from "./services/data";
+import { fetchSurveyResponses } from "./services/data";
 import { TimeFilter, SurveyResponse } from "./types";
 import { CommunityNeedsView } from "./components/CommunityNeedsView";
 import { DemographicsView } from "./components/DemographicsView";
@@ -68,24 +68,52 @@ const App: React.FC = () => {
     "home" | "needs" | "demographics" | "timeline"
   >("home");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("week");
-  const [filteredData, setFilteredData] = useState<SurveyResponse[]>(MOCK_DATA);
+  const [allData, setAllData] = useState<SurveyResponse[]>([]);
+  const [currentPeriodData, setCurrentPeriodData] = useState<SurveyResponse[]>([]);
+  const [prevPeriodData, setPrevPeriodData] = useState<SurveyResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showMethodology, setShowMethodology] = useState(false);
 
-  // Filter Logic
-  useEffect(() => {
-    let res = MOCK_DATA;
-    const now = new Date();
-    if (timeFilter === "week") {
-      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      res = res.filter((d) => new Date(d.timestamp) > weekAgo);
-    } else if (timeFilter === "month") {
-      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      res = res.filter((d) => new Date(d.timestamp) > monthAgo);
-    } else if (timeFilter === "quarter") {
-      const quarterAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-      res = res.filter((d) => new Date(d.timestamp) > quarterAgo);
+
+  // Fetch backend data when timeFilter changes
+
+  // Helper to get the number of days for each filter
+  const getDaysForFilter = (filter: TimeFilter) => {
+    switch (filter) {
+      case "week": return 7;
+      case "month": return 31;
+      case "quarter": return 93;
+      default: return 365 * 10; // all time
     }
-    setFilteredData(res);
+  };
+
+  useEffect(() => {
+    setLoading(true);
+    // Fetch enough data for two periods
+    const days = getDaysForFilter(timeFilter) * 2;
+    fetchSurveyResponses("all")
+      .then((responses) => {
+        // Sort responses by timestamp descending
+        const sorted = [...responses].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        const now = Date.now();
+        const periodMs = getDaysForFilter(timeFilter) * 24 * 60 * 60 * 1000;
+        // Current period: within [now - periodMs, now]
+        const current = sorted.filter(r => new Date(r.timestamp).getTime() >= now - periodMs);
+        // Previous period: within [now - 2*periodMs, now - periodMs)
+        const prev = sorted.filter(r => {
+          const t = new Date(r.timestamp).getTime();
+          return t >= now - 2 * periodMs && t < now - periodMs;
+        });
+        setAllData(responses);
+        setCurrentPeriodData(current);
+        setPrevPeriodData(prev);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError('Failed to load data from backend.');
+        setLoading(false);
+      });
   }, [timeFilter]);
 
   const handleDownload = () => {
@@ -242,18 +270,26 @@ const App: React.FC = () => {
           </div>
         )}
 
+        {/* Loading/Error State */}
+        {loading && (
+          <div className="text-center py-12 text-stone-500 text-lg">Loading data from backend...</div>
+        )}
+        {error && (
+          <div className="text-center py-12 text-red-600 text-lg">{error}</div>
+        )}
+
         {/* Global KPIs - Hide on Landing Page */}
-        {activeTab !== "home" && <StatsView data={filteredData} />}
+        {activeTab !== "home" && !loading && !error && <StatsView data={currentPeriodData} prevData={prevPeriodData} />}
 
         {/* Views */}
         {activeTab === "home" ? (
           <LandingPage onNavigate={setActiveTab} />
         ) : activeTab === "needs" ? (
-          <CommunityNeedsView data={filteredData} />
+          !loading && !error && <CommunityNeedsView data={currentPeriodData} timeFilter={timeFilter} />
         ) : activeTab === "demographics" ? (
-          <DemographicsView data={filteredData} allData={MOCK_DATA} />
+          !loading && !error && <DemographicsView data={currentPeriodData} allData={allData} />
         ) : (
-          <TimelineView data={filteredData} />
+          !loading && !error && <TimelineView data={currentPeriodData} />
         )}
 
         {/* Footer / Context - Visible on all pages but adjusted content on landing page */}

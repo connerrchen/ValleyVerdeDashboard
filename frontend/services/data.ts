@@ -142,3 +142,17 @@ export const generateMockData = (count: number): SurveyResponse[] => {
 };
 
 export const MOCK_DATA = generateMockData(120);
+
+// Fetch real survey responses from backend, with optional time range
+export async function fetchSurveyResponses(range: 'week' | 'month' | 'quarter' | 'all' = 'all'): Promise<SurveyResponse[]> {
+  try {
+    const response = await fetch(`${API_URL}/api/responses/filter?range=${range}`);
+    if (!response.ok) {
+      throw new Error(`API error: ${response.statusText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch survey responses:', error);
+    throw error;
+  }
+}
