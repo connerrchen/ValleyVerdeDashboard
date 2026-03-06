@@ -7,6 +7,13 @@ interface Props {
   prevData?: SurveyResponse[];
 }
 
+function getDeltaPct(current: number, previous: number) {
+  if (previous === 0) {
+    return current === 0 ? 0 : 100;
+  }
+  return ((current - previous) / previous) * 100;
+}
+
 function getAvgWorry(data: SurveyResponse[]) {
   if (!data.length) return 0;
   return data.reduce((acc, curr) => acc + curr.worryLevel, 0) / data.length;
@@ -23,14 +30,14 @@ export const StatsView: React.FC<Props> = ({ data, prevData = [] }) => {
   const prevTotal = prevData.length;
   const prevVerified = prevData.filter(d => d.verified).length;
   const totalDiff = total - prevTotal;
-  const totalDiffPct = prevTotal ? ((totalDiff / prevTotal) * 100) : 0;
-  const totalDiffPctDisplay = prevTotal ? `${totalDiff > 0 ? '+' : ''}${totalDiffPct.toFixed(1)}%` : 'N/A';
+  const totalDiffPct = getDeltaPct(total, prevTotal);
+  const totalDiffPctDisplay = `${totalDiff > 0 ? '+' : ''}${totalDiffPct.toFixed(1)}%`;
   const totalIsUp = totalDiff > 0;
   const totalIsDown = totalDiff < 0;
 
   const verifiedDiff = verified - prevVerified;
-  const verifiedDiffPct = prevVerified ? ((verifiedDiff / prevVerified) * 100) : 0;
-  const verifiedDiffPctDisplay = prevVerified ? `${verifiedDiff > 0 ? '+' : ''}${verifiedDiffPct.toFixed(1)}%` : 'N/A';
+  const verifiedDiffPct = getDeltaPct(verified, prevVerified);
+  const verifiedDiffPctDisplay = `${verifiedDiff > 0 ? '+' : ''}${verifiedDiffPct.toFixed(1)}%`;
   const verifiedIsUp = verifiedDiff > 0;
   const verifiedIsDown = verifiedDiff < 0;
 
@@ -40,10 +47,9 @@ export const StatsView: React.FC<Props> = ({ data, prevData = [] }) => {
 
   // Calculate previous period's average worry
   const prevAvgWorry = getAvgWorry(prevData);
-  const prevAvgWorryDisplay = prevData.length ? prevAvgWorry.toFixed(1) : 'N/A';
   const diff = avgWorry - prevAvgWorry;
-  const diffPct = prevAvgWorry ? ((diff / prevAvgWorry) * 100) : 0;
-  const diffPctDisplay = prevData.length ? `${diff > 0 ? '+' : ''}${diffPct.toFixed(1)}%` : 'N/A';
+  const diffPct = getDeltaPct(avgWorry, prevAvgWorry);
+  const diffPctDisplay = `${diff > 0 ? '+' : ''}${diffPct.toFixed(1)}%`;
   const isUp = diff > 0;
   const isDown = diff < 0;
 
