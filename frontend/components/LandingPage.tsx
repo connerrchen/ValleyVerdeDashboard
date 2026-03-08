@@ -131,7 +131,7 @@ export const LandingPage: React.FC<Props> = ({ onNavigate }) => {
           </div>
 
           {/* About Illustration Placeholder */}
-          <div className="md:col-span-5">
+          {/* <div className="md:col-span-5">
             <div className="w-full aspect-video bg-[#f1f5f9] rounded-xl border-2 border-dashed border-[#94a3b8] flex flex-col items-center justify-center text-stone-400">
               <FileBarChart
                 size={64}
@@ -139,7 +139,7 @@ export const LandingPage: React.FC<Props> = ({ onNavigate }) => {
                 className="mb-4 text-stone-300"
               />
             </div>
-          </div>
+          </div> */}
         </div>
 
         {/* 4. How to Use Section */}

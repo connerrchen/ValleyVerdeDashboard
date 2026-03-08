@@ -304,7 +304,7 @@ def fetch_data(responses: list[dict[str, Any]]) -> dict[str, Any]:
     race_ethnicity_all = [item for r in responses for item in r.get("race_ethnicity", [])]
     metrics["race_ethnicity_counts"] = dict(Counter(race_ethnicity_all))
 
-    zip_codes = [r.get("zip_code") for r in responses if r.get("zip_code")]
+    zip_codes = [r.get("zip_code") for r in responses if r.get("zip_code") and r.get("zip_code") != "None"]
     metrics["zip_code_counts"] = dict(Counter(zip_codes))
 
     household_sizes = [r.get("household_size") for r in responses if r.get("household_size")]

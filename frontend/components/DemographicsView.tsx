@@ -26,16 +26,18 @@ interface Props {
 }
 
 const ZIP_COORDINATES: Record<string, { lat: number; lng: number }> = {
-  "95110": { lat: 37.3467, lng: -121.9056 },
-  "95111": { lat: 37.2859, lng: -121.8262 },
-  "95112": { lat: 37.3483, lng: -121.8863 },
-  "95116": { lat: 37.3492, lng: -121.8508 },
-  "95122": { lat: 37.3316, lng: -121.8331 },
-  "95123": { lat: 37.2447, lng: -121.8305 },
-  "95127": { lat: 37.3729, lng: -121.8083 },
-  "95133": { lat: 37.3724, lng: -121.8609 },
-  "95148": { lat: 37.3359, lng: -121.7866 },
-  "95020": { lat: 37.0058, lng: -121.5683 },
+  "95020": { lat: 37.0058, lng: -121.5683 }, // Gilroy
+  "95050": { lat: 37.3541, lng: -121.9552 }, // Santa Clara
+  "95053": { lat: 37.3688, lng: -121.9447 }, // Santa Clara
+  "95110": { lat: 37.3467, lng: -121.9056 }, // San Jose
+  "95111": { lat: 37.2859, lng: -121.8262 }, // San Jose
+  "95112": { lat: 37.3483, lng: -121.8863 }, // San Jose
+  "95116": { lat: 37.3492, lng: -121.8508 }, // San Jose
+  "95122": { lat: 37.3316, lng: -121.8331 }, // San Jose
+  "95123": { lat: 37.2447, lng: -121.8305 }, // San Jose
+  "95127": { lat: 37.3729, lng: -121.8083 }, // San Jose
+  "95133": { lat: 37.3724, lng: -121.8609 }, // San Jose
+  "95148": { lat: 37.3359, lng: -121.7866 }, // San Jose
 };
 
 const COORDINATE_LIST = Object.values(ZIP_COORDINATES);
@@ -68,6 +70,14 @@ const ETHNICITY_COLOR_MAP: Record<string, string> = {
 };
 const DEFAULT_COLOR = "#9e9e9e";
 
+// Validate US ZIP code format (5 digits or 5+4 format)
+const isValidUSZipCode = (zip: string): boolean => {
+  if (!zip || typeof zip !== 'string') return false;
+  const trimmed = zip.trim();
+  // Match 5 digits or 5+4 format (e.g., "95110" or "95110-1234")
+  return /^\d{5}(-\d{4})?$/.test(trimmed);
+};
+
 const FitBoundsController: React.FC<{
   bounds: [[number, number], [number, number]];
 }> = ({ bounds }) => {
@@ -93,10 +103,14 @@ export const DemographicsView: React.FC<Props> = ({ data, allData }) => {
   const geoHeatPoints = useMemo(() => {
     const counts: Record<string, number> = {};
     data.forEach((d) => {
-      if (d.zipCode && d.zipCode.trim()) {
-        counts[d.zipCode] = (counts[d.zipCode] || 0) + 1;
+      const zip = d.zipCode && d.zipCode.trim();
+      if (zip && zip !== "None" && isValidUSZipCode(zip)) {
+        counts[zip] = (counts[zip] || 0) + 1;
       }
     });
+
+    console.log('📍 ZIP codes in data:', counts);
+    console.log('📍 Available coordinates:', Object.keys(ZIP_COORDINATES));
 
     const validCounts = Object.entries(counts).filter(([zip]) => {
       const coord = ZIP_COORDINATES[zip];
@@ -109,6 +123,8 @@ export const DemographicsView: React.FC<Props> = ({ data, allData }) => {
       );
     });
     const max = Math.max(...validCounts.map(([, count]) => count), 1);
+
+    console.log('📍 Valid points to show on map:', validCounts.length);
 
     return validCounts.map(([zip, count]) => {
       const coord = ZIP_COORDINATES[zip];
@@ -253,9 +269,9 @@ export const DemographicsView: React.FC<Props> = ({ data, allData }) => {
   const countyAreaRanking = useMemo(() => {
     const counts: Record<string, number> = {};
     historicalData.forEach((response) => {
-      // Count all valid non-empty ZIP codes
+      // Count all valid non-empty ZIP codes, excluding "None"
       const zip = response.zipCode && response.zipCode.trim();
-      if (zip) {
+      if (zip && zip !== "None" && isValidUSZipCode(zip)) {
         counts[zip] = (counts[zip] || 0) + 1;
       }
     });
@@ -291,7 +307,7 @@ export const DemographicsView: React.FC<Props> = ({ data, allData }) => {
         topTrendZips.forEach((zip) => {
           row[zip] = responses.filter((response) => {
             const responseZip = response.zipCode && response.zipCode.trim();
-            return responseZip === zip;
+            return responseZip === zip && isValidUSZipCode(responseZip);
           }).length;
         });
 

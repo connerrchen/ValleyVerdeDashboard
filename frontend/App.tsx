@@ -63,6 +63,35 @@ const CornLogo = () => (
   </svg>
 );
 
+const toCsvCell = (value: string | number) => {
+  const stringValue = String(value ?? "");
+  if (/[",\n]/.test(stringValue)) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+  return stringValue;
+};
+
+const countBy = (items: string[]) => {
+  const counts: Record<string, number> = {};
+  items.forEach((item) => {
+    const key = item && item.trim() ? item.trim() : "Unknown";
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  return counts;
+};
+
+const appendCountSection = (
+  rows: string[][],
+  title: string,
+  counts: Record<string, number>
+) => {
+  rows.push([title, "Count"]);
+  Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([label, count]) => rows.push([label, count.toString()]));
+  rows.push([]);
+};
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
     "home" | "needs" | "demographics" | "timeline"
@@ -74,6 +103,8 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showMethodology, setShowMethodology] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
 
   // Fetch backend data when timeFilter changes
@@ -88,8 +119,14 @@ const App: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    setLoading(true);
+  // Extract data fetching logic into a reusable function
+  const fetchData = (isBackgroundRefresh = false) => {
+    if (isBackgroundRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
     // Fetch enough data for two periods
     const days = getDaysForFilter(timeFilter) * 2;
     fetchSurveyResponses("all")
@@ -108,16 +145,110 @@ const App: React.FC = () => {
         setAllData(responses);
         setCurrentPeriodData(current);
         setPrevPeriodData(prev);
-        setLoading(false);
+        setLastRefresh(new Date());
+        if (isBackgroundRefresh) {
+          setIsRefreshing(false);
+        } else {
+          setLoading(false);
+        }
       })
       .catch((err) => {
         setError('Failed to load data from backend.');
-        setLoading(false);
+        if (isBackgroundRefresh) {
+          setIsRefreshing(false);
+        } else {
+          setLoading(false);
+        }
       });
+  };
+
+  // Initial fetch when timeFilter changes
+  useEffect(() => {
+    fetchData(false);
   }, [timeFilter]);
 
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      fetchData(true);
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(intervalId);
+  }, [timeFilter]); // Re-create interval when timeFilter changes
+
   const handleDownload = () => {
-    alert("System Action: Generating PII-stripped CSV file for download...");
+    if (loading || error) {
+      alert("Data is still loading. Please try again in a moment.");
+      return;
+    }
+
+    const dataset = currentPeriodData;
+    if (!dataset.length) {
+      alert("No responses available for the selected time period.");
+      return;
+    }
+
+    const avgWorry =
+      dataset.reduce((sum, row) => sum + (row.worryLevel || 0), 0) / dataset.length;
+
+    const rows: string[][] = [];
+    rows.push(["Valley Verde Dashboard - Privacy-Safe Report"]);
+    rows.push(["Generated At (UTC)", new Date().toISOString()]);
+    rows.push(["Selected Time Filter", timeFilter]);
+    rows.push(["Current View Responses", dataset.length.toString()]);
+    rows.push(["All-Time Responses", allData.length.toString()]);
+    rows.push(["Average Worry Level", avgWorry.toFixed(2)]);
+    rows.push([]);
+
+    appendCountSection(
+      rows,
+      "Worry Distribution",
+      countBy(dataset.map((row) => `${row.worryLevel || 0}`))
+    );
+    appendCountSection(rows, "Future Outlook", countBy(dataset.map((row) => row.futureOutlook || "Unknown")));
+    appendCountSection(rows, "Age Range", countBy(dataset.map((row) => row.ageRange || "Unknown")));
+    appendCountSection(rows, "Gender", countBy(dataset.map((row) => row.gender || "Unknown")));
+    appendCountSection(rows, "Income Range", countBy(dataset.map((row) => row.incomeRange || "Unknown")));
+    appendCountSection(
+      rows,
+      "Household Size",
+      countBy(dataset.map((row) => `${row.householdSize || 0}`))
+    );
+    appendCountSection(
+      rows,
+      "Affordability Barriers",
+      countBy(dataset.flatMap((row) => row.affordabilityBarriers || []))
+    );
+    appendCountSection(
+      rows,
+      "Availability Barriers",
+      countBy(dataset.flatMap((row) => row.availabilityBarriers || []))
+    );
+    appendCountSection(
+      rows,
+      "Knowledge Interests",
+      countBy(dataset.flatMap((row) => row.knowledgeInterests || []))
+    );
+    appendCountSection(
+      rows,
+      "Ethnicity",
+      countBy(dataset.flatMap((row) => (Array.isArray(row.ethnicity) ? row.ethnicity : [])))
+    );
+
+    const csv = rows
+      .map((row) => row.map((cell) => toCsvCell(cell)).join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `valley-verde-report-${timeFilter}-${stamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleGenerateReport = () => {
@@ -221,9 +352,25 @@ const App: React.FC = () => {
                     ? "Demographics & Geography"
                     : "Community Response Timeline"}
               </h2>
-              <p className="text-stone-500 text-sm">
-                Real-time survey analytics
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-stone-500 text-sm">
+                  Real-time survey analytics
+                </p>
+                {isRefreshing && (
+                  <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                    <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Updating...
+                  </span>
+                )}
+                {lastRefresh && !isRefreshing && (
+                  <span className="text-xs text-stone-400">
+                    Updated {lastRefresh.toLocaleTimeString()}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
