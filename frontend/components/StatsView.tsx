@@ -1,10 +1,11 @@
 import React from 'react';
-import { SurveyResponse } from '../types';
+import { SurveyResponse, TimeFilter } from '../types';
 import { Users, CheckCircle, HeartPulse, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 interface Props {
   data: SurveyResponse[];
   prevData?: SurveyResponse[];
+  timeFilter?: TimeFilter;
 }
 
 function getDeltaPct(current: number, previous: number) {
@@ -19,9 +20,19 @@ function getAvgWorry(data: SurveyResponse[]) {
   return data.reduce((acc, curr) => acc + curr.worryLevel, 0) / data.length;
 }
 
+function getTimePeriodLabel(filter?: TimeFilter): string {
+  switch(filter) {
+    case 'week': return 'Weekly Responses';
+    case 'month': return 'Monthly Responses';
+    case 'quarter': return 'Quarterly Responses';
+    case 'all': return 'All-Time Responses';
+    default: return 'Total Responses';
+  }
+}
+
 // No longer needed, prevData is passed in
 
-export const StatsView: React.FC<Props> = ({ data, prevData = [] }) => {
+export const StatsView: React.FC<Props> = ({ data, prevData = [], timeFilter }) => {
   const total = data.length;
   const verified = data.filter(d => d.verified).length;
   const anonymous = total - verified;
@@ -58,7 +69,7 @@ export const StatsView: React.FC<Props> = ({ data, prevData = [] }) => {
       {/* Total Responses - Green */}
       <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-sm flex items-center justify-between relative overflow-hidden group">
         <div className="relative z-10">
-            <p className="text-stone-500 text-xs font-bold uppercase tracking-wider">Total Responses</p>
+            <p className="text-stone-500 text-xs font-bold uppercase tracking-wider">{getTimePeriodLabel(timeFilter)}</p>
             <div className="flex items-end gap-2">
               <h2 className="text-3xl font-bold text-[#1b4332] mt-1">{total}</h2>
               <span className={`flex items-center text-sm font-bold ml-2 ${totalIsUp ? 'text-red-600' : totalIsDown ? 'text-green-600' : 'text-stone-500'}`}>

@@ -93,7 +93,9 @@ export const DemographicsView: React.FC<Props> = ({ data, allData }) => {
   const geoHeatPoints = useMemo(() => {
     const counts: Record<string, number> = {};
     data.forEach((d) => {
-      counts[d.zipCode] = (counts[d.zipCode] || 0) + 1;
+      if (d.zipCode && d.zipCode.trim()) {
+        counts[d.zipCode] = (counts[d.zipCode] || 0) + 1;
+      }
     });
 
     const validCounts = Object.entries(counts).filter(([zip]) => {
@@ -170,29 +172,61 @@ export const DemographicsView: React.FC<Props> = ({ data, allData }) => {
       "$100,000 - $150,000": 125,
       "$150,000 - $200,000": 175,
       "$200,000 or more": 225,
-      "Prefer not to say": 0,
+      "Prefer not to say": 125, // Map to middle value instead of filtering out
     };
 
-    return data
-      .filter((d) => d.incomeRange !== "Prefer not to say") // Filter out unknown for scatter
-      .map((d) => ({
-        x: incomeMap[d.incomeRange] || 0,
-        y: d.worryLevel, // 1-5
-        z: d.householdSize * 50,
-        rawIncome: d.incomeRange,
-        household: d.householdSize,
-      }));
-  }, [data]);
+    // Use allData for correlation to show all responses, not just current period
+    const sourceData = allData && allData.length > 0 ? allData : data;
+
+    const points = sourceData.map((d) => ({
+      x: incomeMap[d.incomeRange] || 125,
+      y: d.worryLevel || 1,
+      z: (d.householdSize || 1) * 50,
+      rawIncome: d.incomeRange || "Unknown",
+      household: d.householdSize || 1,
+      rawWorry: d.worryLevel || 1,
+    }));
+
+    // If multiple households have identical x/y, nudge them slightly so both remain visible.
+    const keyCounts: Record<string, number> = {};
+    points.forEach((p) => {
+      const key = `${p.x}-${p.y}`;
+      keyCounts[key] = (keyCounts[key] || 0) + 1;
+    });
+
+    const keySeen: Record<string, number> = {};
+    const xSpread = 6;
+
+    return points.map((p) => {
+      const key = `${p.x}-${p.y}`;
+      const totalAtPoint = keyCounts[key] || 1;
+      const seen = keySeen[key] || 0;
+      keySeen[key] = seen + 1;
+
+      if (totalAtPoint === 1) {
+        return p;
+      }
+
+      const centeredOffset = (seen - (totalAtPoint - 1) / 2) * xSpread;
+      return {
+        ...p,
+        x: p.x + centeredOffset,
+      };
+    });
+  }, [data, allData]);
 
   // 3. Ethnicity Breakdown
   const ethnicityData = useMemo(() => {
     const counts: Record<string, number> = {};
     data.forEach((d) => {
-      d.ethnicity.forEach((eth) => {
-        counts[eth] = (counts[eth] || 0) + 1;
+      const ethnicities = d.ethnicity || [];
+      (Array.isArray(ethnicities) ? ethnicities : []).forEach((eth) => {
+        if (eth) {
+          counts[eth] = (counts[eth] || 0) + 1;
+        }
       });
     });
-    return Object.keys(counts).map((k) => ({ name: k, value: counts[k] }));
+    return Object.keys(counts).map((k) => ({ name: k, value: counts[k] })).filter(item => item.value > 0);
   }, [data]);
 
   // 4. Age Breakdown
@@ -205,15 +239,25 @@ export const DemographicsView: React.FC<Props> = ({ data, allData }) => {
       "Over 60",
       "Prefer not to say",
     ];
-    data.forEach((d) => (counts[d.ageRange] = (counts[d.ageRange] || 0) + 1));
+    data.forEach((d) => {
+      const age = d.ageRange || "Prefer not to say";
+      counts[age] = (counts[age] || 0) + 1;
+    });
 
-    return order.map((k) => ({ name: k, value: counts[k] || 0 }));
+    // Only include ages that exist in the data (have count > 0)
+    return order
+      .filter((k) => counts[k] && counts[k] > 0)
+      .map((k) => ({ name: k, value: counts[k] }));
   }, [data]);
 
   const countyAreaRanking = useMemo(() => {
     const counts: Record<string, number> = {};
     historicalData.forEach((response) => {
-      counts[response.zipCode] = (counts[response.zipCode] || 0) + 1;
+      // Count all valid non-empty ZIP codes
+      const zip = response.zipCode && response.zipCode.trim();
+      if (zip) {
+        counts[zip] = (counts[zip] || 0) + 1;
+      }
     });
 
     return Object.entries(counts)
@@ -245,7 +289,10 @@ export const DemographicsView: React.FC<Props> = ({ data, allData }) => {
         };
 
         topTrendZips.forEach((zip) => {
-          row[zip] = responses.filter((response) => response.zipCode === zip).length;
+          row[zip] = responses.filter((response) => {
+            const responseZip = response.zipCode && response.zipCode.trim();
+            return responseZip === zip;
+          }).length;
         });
 
         return row;
@@ -353,7 +400,7 @@ export const DemographicsView: React.FC<Props> = ({ data, allData }) => {
                             <p className="text-stone-600">
                               Worry Level:{" "}
                               <span className="font-semibold text-red-500">
-                                {d.y}/5
+                                {d.rawWorry}/5
                               </span>
                             </p>
                             <p className="text-stone-600">

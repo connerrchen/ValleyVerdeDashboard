@@ -29,8 +29,7 @@ app.add_middleware(
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "YOUR_SPREADSHEET_ID_HERE")
-# Includes column A timestamp when available.
-RANGE_NAME = os.getenv("SHEETS_RANGE", "A2:N")
+RANGE_NAME = os.getenv("SHEETS_RANGE", "SHEETS_RANGE")
 SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 
 
@@ -77,8 +76,43 @@ def parse_multiselect(cell_value: str | None) -> list[str]:
 def parse_timestamp(value: str | None) -> datetime | None:
     if not value:
         return None
+    
+    value_str = str(value).strip()
+    
+    # Try to parse as numeric timestamp (Google Sheets serial number)
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        serial_number = float(value_str)
+        # Excel serial date: days since 1/1/1900 (with 1/1/1900 = 1)
+        # Google Sheets uses the same convention
+        # Convert serial number to datetime
+        # 1 = 1/1/1900, so we add days to that base date
+        base_date = datetime(1900, 1, 1)
+        # Adjust for Excel's leap year bug (it thinks 1900 is a leap year, but it's not)
+        if serial_number > 60:
+            serial_number -= 1
+        result = base_date + timedelta(days=serial_number - 1)
+        return result if result.year > 1900 else None
+    except (ValueError, TypeError):
+        pass
+    
+    # List of timestamp formats to try
+    formats = [
+        "%m/%d/%Y %H:%M:%S",      # 2/17/2026 12:49:38
+        "%m/%d/%Y %I:%M:%S %p",   # 2/17/2026 12:49:38 PM
+        "%Y-%m-%d %H:%M:%S",      # 2026-02-17 12:49:38
+        "%m/%d/%Y",               # 2/17/2026
+        "%Y-%m-%d",               # 2026-02-17
+    ]
+    
+    for fmt in formats:
+        try:
+            return datetime.strptime(value_str, fmt)
+        except ValueError:
+            continue
+    
+    # Try ISO format as fallback
+    try:
+        return datetime.fromisoformat(value_str.replace("Z", "+00:00"))
     except ValueError:
         return None
 
@@ -112,17 +146,17 @@ def fetch_sheet_rows() -> list[list[str]]:
 
 def normalize_raw_response(row: list[str]) -> dict[str, Any]:
     """Normalize one row to the app2-style raw schema used by summary metrics."""
-    # Supports both A:N (timestamp included) and B:N (timestamp missing)
-    has_timestamp_col = len(row) >= 14 and parse_timestamp(row[0]) is not None
-    offset = 1 if has_timestamp_col else 0
-
+    # Timestamps are always in column A based on SHEETS_RANGE = A2:N
+    offset = 1
+    
     # Ensure indexes below are safe.
     padded = list(row)
-    min_len = 14 if has_timestamp_col else 13
+    min_len = 14  # A-N = 14 columns
     while len(padded) < min_len:
         padded.append("")
 
-    timestamp = padded[0].strip() if has_timestamp_col and padded[0] else datetime.now(timezone.utc).isoformat()
+    # Store the raw timestamp from column A
+    timestamp = padded[0].strip() if padded[0] else datetime.now(timezone.utc).isoformat()
     worry_level = parse_int(padded[offset + 1], 0)
 
     return {
@@ -201,6 +235,9 @@ def in_range(timestamp_value: str, selected_range: Literal["week", "month", "qua
 def fetch_data(responses: list[dict[str, Any]]) -> dict[str, Any]:
     """Format aggregate summary metrics."""
     metrics: dict[str, Any] = {}
+    
+    # Include the number of responses
+    metrics["num_responses"] = len(responses)
 
     worry_levels = [r["worry_level"] for r in responses if r.get("worry_level") is not None]
     metrics["avg_worry"] = round(sum(worry_levels) / len(worry_levels), 2) if worry_levels else 0
@@ -286,6 +323,31 @@ def fetch_data(responses: list[dict[str, Any]]) -> dict[str, Any]:
 @app.get("/api/responses")
 def get_responses():
     return get_all_frontend_responses()
+
+
+@app.get("/api/debug/raw")
+def debug_raw():
+    """Debug endpoint to see raw row data"""
+    rows = fetch_sheet_rows()
+    if not rows:
+        return {"error": "No rows fetched"}
+    # Return first row with each value's type and repr
+    first_row = rows[0] if rows else []
+    return {
+        "total_raw_rows_fetched": len(rows),
+        "sheets_range": RANGE_NAME,
+        "first_row_length": len(first_row),
+        "first_row_values": [
+            {
+                "index": i,
+                "value": val,
+                "type": type(val).__name__,
+                "repr": repr(val),
+            }
+            for i, val in enumerate(first_row)
+        ],
+        "all_rows_lengths": [len(row) for row in rows],
+    }
 
 
 @app.get("/api/responses/filter")

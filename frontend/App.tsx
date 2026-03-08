@@ -279,7 +279,7 @@ const App: React.FC = () => {
         )}
 
         {/* Global KPIs - Hide on Landing Page */}
-        {activeTab !== "home" && !loading && !error && <StatsView data={currentPeriodData} prevData={prevPeriodData} />}
+        {activeTab !== "home" && !loading && !error && <StatsView data={currentPeriodData} prevData={prevPeriodData} timeFilter={timeFilter} />}
 
         {/* Views */}
         {activeTab === "home" ? (
