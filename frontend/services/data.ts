@@ -1,16 +1,7 @@
 import { SurveyResponse } from '../types';
 
-// Backend API URL:
-// - local dev defaults to localhost
-// - production requires VITE_API_URL, but accepts values with or without trailing /api
-const RAW_API_URL = (import.meta.env.VITE_API_URL || '').trim();
-const DEFAULT_API_ORIGIN = import.meta.env.DEV ? 'http://localhost:8000' : window.location.origin;
-const API_ORIGIN = (RAW_API_URL || DEFAULT_API_ORIGIN).replace(/\/+$/, '').replace(/\/api$/i, '');
-
-const buildApiUrl = (path: string) => {
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return `${API_ORIGIN}${normalizedPath}`;
-};
+// Backend API URL - use environment variable or default to localhost
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // PDF Specific Options
 const ZIP_CODES = ['95112', '95116', '95122', '95110', '95133', '95020', '95111', '95127', '95148', '95123'];
@@ -62,9 +53,9 @@ const FUTURE_OUTLOOKS = [
 // Fetch summary data from backend
 export async function fetchSummaryData() {
   try {
-    const response = await fetch(buildApiUrl('/api/summary'));
+    const response = await fetch(`${API_URL}/api/summary`);
     if (!response.ok) {
-      throw new Error(`API error ${response.status}: ${response.statusText}`);
+      throw new Error(`API error: ${response.statusText}`);
     }
     return await response.json();
   } catch (error) {
@@ -155,9 +146,9 @@ export const generateMockData = (count: number): SurveyResponse[] => {
 // Fetch real survey responses from backend, with optional time range
 export async function fetchSurveyResponses(range: 'week' | 'month' | 'quarter' | 'all' = 'all'): Promise<SurveyResponse[]> {
   try {
-    const response = await fetch(buildApiUrl(`/api/responses/filter?range=${range}`));
+    const response = await fetch(`${API_URL}/api/responses/filter?range=${range}`);
     if (!response.ok) {
-      throw new Error(`API error ${response.status}: ${response.statusText}`);
+      throw new Error(`API error: ${response.statusText}`);
     }
     return await response.json();
   } catch (error) {
