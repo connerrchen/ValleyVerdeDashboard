@@ -1,16 +1,14 @@
 
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+import json
 import os
-import os.path
 from typing import Any, Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -26,14 +24,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# If modifying these scopes, delete token.json.
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "YOUR_SPREADSHEET_ID_HERE")
 # Includes column A timestamp when available.
 RANGE_NAME = os.getenv("SHEETS_RANGE", "A2:N")
-BASE_DIR = os.path.dirname(__file__)
-TOKEN_PATH = os.path.join(BASE_DIR, "token.json")
-CREDENTIALS_PATH = os.path.join(BASE_DIR, "credentials.json")
+SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 
 
 def get_sheets_service():
@@ -42,26 +37,32 @@ def get_sheets_service():
         print("SPREADSHEET_ID is not configured; returning empty dataset.")
         return None
 
-    creds = None
-    if os.path.exists(TOKEN_PATH):
-        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+    if not SERVICE_ACCOUNT_JSON:
+        print("GOOGLE_SERVICE_ACCOUNT_JSON is not configured; returning empty dataset.")
+        return None
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists(CREDENTIALS_PATH):
-                print(
-                    f"Google credentials file not found at {CREDENTIALS_PATH}; "
-                    "returning empty dataset."
-                )
-                return None
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(TOKEN_PATH, "w", encoding="utf-8") as token:
-            token.write(creds.to_json())
+    # Accept either raw JSON payload or a path to a credentials file.
+    if os.path.exists(SERVICE_ACCOUNT_JSON):
+        try:
+            creds = service_account.Credentials.from_service_account_file(
+                SERVICE_ACCOUNT_JSON,
+                scopes=SCOPES,
+            )
+            return build("sheets", "v4", credentials=creds)
+        except (OSError, ValueError) as err:
+            print(f"Invalid service account file path: {err}")
+            return None
 
-    return build("sheets", "v4", credentials=creds)
+    try:
+        service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
+        creds = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=SCOPES,
+        )
+        return build("sheets", "v4", credentials=creds)
+    except (json.JSONDecodeError, ValueError) as err:
+        print(f"Invalid GOOGLE_SERVICE_ACCOUNT_JSON value: {err}")
+        return None
 
 
 def parse_multiselect(cell_value: str | None) -> list[str]:
