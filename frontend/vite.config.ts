@@ -18,6 +18,26 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
+      },
+      build: {
+        // Optimize chunk size to reduce memory usage
+        chunkSizeWarningLimit: 1000,
+        rollupOptions: {
+          output: {
+            // Manual chunk splitting to reduce memory during build
+            manualChunks: {
+              'react-vendor': ['react', 'react-dom', 'react-is'],
+              'charts': ['recharts'],
+              'maps': ['leaflet', 'react-leaflet'],
+            }
+          }
+        },
+        // Reduce memory usage during build
+        minify: 'esbuild',
+        // Target modern browsers to reduce polyfills
+        target: 'es2015',
+        // Smaller source maps for production
+        sourcemap: false,
       }
     };
 });
