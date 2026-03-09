@@ -16,9 +16,17 @@ from googleapiclient.errors import HttpError
 load_dotenv()
 
 app = FastAPI()
+
+# CORS: must list origins explicitly when allow_credentials=True (cannot use "*")
+# Add your Vercel URL(s) - use env var for flexibility across preview deployments
+_ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:5173,https://valley-verde-dashboard-vfn5-dg2pnpntz.vercel.app,https://valley-verde-dashboard.vercel.app"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in _ALLOWED_ORIGINS if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
