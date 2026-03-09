@@ -16,11 +16,12 @@ from googleapiclient.errors import HttpError
 load_dotenv()
 
 app = FastAPI()
+
+# CORS: allow localhost + all Vercel deployments (preview URLs change per deploy)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://valley-verde-dashboard-vfn5.vercel.app"  
-    ],
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origin_regex=r"https://.*\.vercel\.app",  # matches all Vercel preview & prod URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
