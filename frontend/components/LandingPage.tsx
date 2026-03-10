@@ -58,7 +58,7 @@ export const LandingPage: React.FC<Props> = ({ onNavigate }) => {
 
             <div className="flex flex-wrap gap-4 pt-4">
               <a
-                href="https://docs.google.com/forms/d/e/1FAIpQLScTWCmlC0GqmapdZqWqMv3DOLha6LxPSITqVZMA4dl2wY7nCQ/viewform?usp=header"
+                href="https://docs.google.com/forms/d/e/1FAIpQLSf4W0i_Vm91NOM_n5Q8CJSLRHcdXVnEVEF9dG437PzpqcJT6Q/viewform?usp=header"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-8 py-3.5 bg-[#4d7c0f] hover:bg-[#3f6212] text-white font-bold rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2 text-base"
