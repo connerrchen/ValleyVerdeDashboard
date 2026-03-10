@@ -1,12 +1,13 @@
 
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 import json
 import os
 from typing import Any, Literal
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -31,8 +32,18 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "YOUR_SPREADSHEET_ID_HERE")
 RANGE_NAME = os.getenv("SHEETS_RANGE", "SHEETS_RANGE")
 SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+ROWS_CACHE_TTL_SECONDS = int(os.getenv("ROWS_CACHE_TTL_SECONDS", "60"))
+SUMMARY_CACHE_TTL_SECONDS = int(os.getenv("SUMMARY_CACHE_TTL_SECONDS", "60"))
+MAX_SUMMARY_COMMENTS = int(os.getenv("MAX_SUMMARY_COMMENTS", "100"))
+ENABLE_DEBUG_ENDPOINTS = os.getenv("ENABLE_DEBUG_ENDPOINTS", "false").lower() == "true"
+DEFAULT_ALL_RANGE_LIMIT = int(os.getenv("DEFAULT_ALL_RANGE_LIMIT", "200"))
+MAX_FILTER_LIMIT = int(os.getenv("MAX_FILTER_LIMIT", "500"))
+
+_rows_cache: dict[str, Any] = {"expires_at": None, "rows": []}
+_summary_cache: dict[str, Any] = {"expires_at": None, "value": None}
 
 
+@lru_cache(maxsize=1)
 def get_sheets_service():
     """Authenticate and return the Google Sheets API service."""
     if not SPREADSHEET_ID or SPREADSHEET_ID == "YOUR_SPREADSHEET_ID_HERE":
@@ -127,7 +138,18 @@ def parse_int(value: str | None, default: int = 0) -> int:
 
 
 def fetch_sheet_rows() -> list[list[str]]:
-    """Fetch raw rows from Google Sheets."""
+    """Fetch raw rows from Google Sheets with a short TTL cache."""
+    now = datetime.now(timezone.utc)
+    cache_expires_at = _rows_cache.get("expires_at")
+    cached_rows = _rows_cache.get("rows")
+
+    if (
+        isinstance(cache_expires_at, datetime)
+        and cache_expires_at > now
+        and isinstance(cached_rows, list)
+    ):
+        return cached_rows
+
     try:
         service = get_sheets_service()
         if service is None:
@@ -138,9 +160,14 @@ def fetch_sheet_rows() -> list[list[str]]:
             .get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME)
             .execute()
         )
-        return result.get("values", [])
+        rows = result.get("values", [])
+        _rows_cache["rows"] = rows
+        _rows_cache["expires_at"] = now + timedelta(seconds=ROWS_CACHE_TTL_SECONDS)
+        return rows
     except (HttpError, OSError, ValueError) as err:
         print(f"An error occurred while reading Sheets: {err}")
+        if isinstance(cached_rows, list):
+            return cached_rows
         return []
 
 
@@ -233,87 +260,110 @@ def in_range(timestamp_value: str, selected_range: Literal["week", "month", "qua
 
 
 def fetch_data(responses: list[dict[str, Any]]) -> dict[str, Any]:
-    """Format aggregate summary metrics."""
+    """Format aggregate summary metrics using one-pass aggregation."""
     metrics: dict[str, Any] = {}
-    
-    # Include the number of responses
-    metrics["num_responses"] = len(responses)
+    total = len(responses)
+    metrics["num_responses"] = total
 
-    worry_levels = [r["worry_level"] for r in responses if r.get("worry_level") is not None]
-    metrics["avg_worry"] = round(sum(worry_levels) / len(worry_levels), 2) if worry_levels else 0
-    metrics["worry_distribution"] = dict(Counter(worry_levels))
+    worry_distribution: Counter[int] = Counter()
+    trouble_affording_counts: Counter[str] = Counter()
+    trouble_finding_counts: Counter[str] = Counter()
+    knowledge_counts: Counter[str] = Counter()
+    future_concern_counts: Counter[str] = Counter()
+    age_counts: Counter[str] = Counter()
+    gender_counts: Counter[str] = Counter()
+    race_ethnicity_counts: Counter[str] = Counter()
+    zip_code_counts: Counter[str] = Counter()
+    household_size_counts: Counter[int] = Counter()
+    household_income_counts: Counter[str] = Counter()
+
+    worry_sum = 0
+    worry_count = 0
+    extremely_worried = 0
+    not_worried = 0
+    with_trouble_affording = 0
+    with_trouble_finding = 0
+    comments: list[str] = []
+
+    for response in responses:
+        worry_level = response.get("worry_level")
+        if isinstance(worry_level, int):
+            worry_distribution[worry_level] += 1
+            worry_sum += worry_level
+            worry_count += 1
+            if worry_level >= 4:
+                extremely_worried += 1
+            if worry_level <= 2:
+                not_worried += 1
+
+        trouble_affording = response.get("trouble_affording") or []
+        trouble_affording_counts.update(trouble_affording)
+        if any(item != "I do not have trouble getting any type of food" for item in trouble_affording):
+            with_trouble_affording += 1
+
+        trouble_finding = response.get("trouble_finding") or []
+        trouble_finding_counts.update(trouble_finding)
+        if any(item != "I do not have trouble getting any type of food" for item in trouble_finding):
+            with_trouble_finding += 1
+
+        knowledge_counts.update(response.get("knowledge_needed") or [])
+        race_ethnicity_counts.update(response.get("race_ethnicity") or [])
+
+        future_concern = response.get("future_concern")
+        if future_concern:
+            future_concern_counts[future_concern] += 1
+
+        age = response.get("age")
+        if age:
+            age_counts[age] += 1
+
+        gender = response.get("gender")
+        if gender:
+            gender_counts[gender] += 1
+
+        zip_code = response.get("zip_code")
+        if zip_code and zip_code != "None":
+            zip_code_counts[zip_code] += 1
+
+        household_size = response.get("household_size")
+        if household_size:
+            household_size_counts[household_size] += 1
+
+        household_income = response.get("household_income")
+        if household_income:
+            household_income_counts[household_income] += 1
+
+        comment = response.get("additional_comments")
+        if comment and len(comments) < MAX_SUMMARY_COMMENTS:
+            comments.append(comment)
+
+    metrics["avg_worry"] = round(worry_sum / worry_count, 2) if worry_count else 0
+    metrics["worry_distribution"] = dict(worry_distribution)
     metrics["percent_extremely_worried"] = (
-        round(sum(1 for w in worry_levels if w >= 4) / len(worry_levels) * 100, 1) if worry_levels else 0
+        round(extremely_worried / worry_count * 100, 1) if worry_count else 0
     )
     metrics["percent_not_worried"] = (
-        round(sum(1 for w in worry_levels if w <= 2) / len(worry_levels) * 100, 1) if worry_levels else 0
+        round(not_worried / worry_count * 100, 1) if worry_count else 0
     )
 
-    trouble_affording_all = [item for r in responses for item in r.get("trouble_affording", [])]
-    metrics["trouble_affording_counts"] = dict(Counter(trouble_affording_all))
+    metrics["trouble_affording_counts"] = dict(trouble_affording_counts)
     metrics["percent_with_trouble_affording"] = (
-        round(
-            sum(
-                1
-                for r in responses
-                if any(
-                    t != "I do not have trouble getting any type of food"
-                    for t in r.get("trouble_affording", [])
-                )
-            )
-            / len(responses)
-            * 100,
-            1,
-        )
-        if responses
-        else 0
+        round(with_trouble_affording / total * 100, 1) if total else 0
     )
 
-    trouble_finding_all = [item for r in responses for item in r.get("trouble_finding", [])]
-    metrics["trouble_finding_counts"] = dict(Counter(trouble_finding_all))
+    metrics["trouble_finding_counts"] = dict(trouble_finding_counts)
     metrics["percent_with_trouble_finding"] = (
-        round(
-            sum(
-                1
-                for r in responses
-                if any(
-                    t != "I do not have trouble getting any type of food"
-                    for t in r.get("trouble_finding", [])
-                )
-            )
-            / len(responses)
-            * 100,
-            1,
-        )
-        if responses
-        else 0
+        round(with_trouble_finding / total * 100, 1) if total else 0
     )
 
-    knowledge_all = [item for r in responses for item in r.get("knowledge_needed", [])]
-    metrics["knowledge_counts"] = dict(Counter(knowledge_all))
-
-    future_all = [r.get("future_concern") for r in responses if r.get("future_concern")]
-    metrics["future_concern_counts"] = dict(Counter(future_all))
-
-    ages = [r.get("age") for r in responses if r.get("age")]
-    metrics["age_counts"] = dict(Counter(ages))
-
-    genders = [r.get("gender") for r in responses if r.get("gender")]
-    metrics["gender_counts"] = dict(Counter(genders))
-
-    race_ethnicity_all = [item for r in responses for item in r.get("race_ethnicity", [])]
-    metrics["race_ethnicity_counts"] = dict(Counter(race_ethnicity_all))
-
-    zip_codes = [r.get("zip_code") for r in responses if r.get("zip_code") and r.get("zip_code") != "None"]
-    metrics["zip_code_counts"] = dict(Counter(zip_codes))
-
-    household_sizes = [r.get("household_size") for r in responses if r.get("household_size")]
-    metrics["household_size_counts"] = dict(Counter(household_sizes))
-
-    household_incomes = [r.get("household_income") for r in responses if r.get("household_income")]
-    metrics["household_income_counts"] = dict(Counter(household_incomes))
-
-    comments = [r.get("additional_comments") for r in responses if r.get("additional_comments")]
+    metrics["knowledge_counts"] = dict(knowledge_counts)
+    metrics["future_concern_counts"] = dict(future_concern_counts)
+    metrics["age_counts"] = dict(age_counts)
+    metrics["gender_counts"] = dict(gender_counts)
+    metrics["race_ethnicity_counts"] = dict(race_ethnicity_counts)
+    metrics["zip_code_counts"] = dict(zip_code_counts)
+    metrics["household_size_counts"] = dict(household_size_counts)
+    metrics["household_income_counts"] = dict(household_income_counts)
     metrics["additional_comments"] = comments
     metrics["timestamp"] = datetime.now(timezone.utc).isoformat()
 
@@ -328,6 +378,9 @@ def get_responses():
 @app.get("/api/debug/raw")
 def debug_raw():
     """Debug endpoint to see raw row data"""
+    if not ENABLE_DEBUG_ENDPOINTS:
+        raise HTTPException(status_code=404, detail="Not found")
+
     rows = fetch_sheet_rows()
     if not rows:
         return {"error": "No rows fetched"}
@@ -353,12 +406,47 @@ def debug_raw():
 @app.get("/api/responses/filter")
 def get_filtered_responses(
     range: Literal["week", "month", "quarter", "all"] = Query("week"),
+    offset: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1),
 ):
-    responses = get_all_frontend_responses()
-    return [response for response in responses if in_range(response.get("timestamp", ""), range)]
+    raw_responses = get_all_raw_responses()
+
+    effective_limit = limit
+    if effective_limit is None and range == "all":
+        effective_limit = DEFAULT_ALL_RANGE_LIMIT
+    if effective_limit is not None:
+        effective_limit = min(effective_limit, MAX_FILTER_LIMIT)
+
+    results: list[dict[str, Any]] = []
+    skipped = 0
+    for index, raw in enumerate(raw_responses):
+        if not in_range(raw.get("timestamp", ""), range):
+            continue
+        if skipped < offset:
+            skipped += 1
+            continue
+
+        results.append(build_frontend_response(raw, index))
+        if effective_limit is not None and len(results) >= effective_limit:
+            break
+
+    return results
 
 
 @app.get("/api/summary")
 def get_summary():
+    now = datetime.now(timezone.utc)
+    cache_expires_at = _summary_cache.get("expires_at")
+    cached_value = _summary_cache.get("value")
+    if (
+        isinstance(cache_expires_at, datetime)
+        and cache_expires_at > now
+        and isinstance(cached_value, dict)
+    ):
+        return cached_value
+
     survey_responses = get_all_raw_responses()
-    return fetch_data(survey_responses)
+    summary = fetch_data(survey_responses)
+    _summary_cache["value"] = summary
+    _summary_cache["expires_at"] = now + timedelta(seconds=SUMMARY_CACHE_TTL_SECONDS)
+    return summary
