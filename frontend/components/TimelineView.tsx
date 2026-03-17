@@ -44,7 +44,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ data }) => {
       });
       const topConcern = Object.entries(barrierCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'No barriers reported';
       
-      const percentWorried = Math.round((responses.filter(r => r.worryLevel >= 7).length / responses.length) * 100);
+      const percentWorried = Math.round((responses.filter(r => r.worryLevel >= 4).length / responses.length) * 100);
 
       return {
         date: month,
